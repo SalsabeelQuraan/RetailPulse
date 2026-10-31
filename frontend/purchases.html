@@ -1,0 +1,168 @@
+<!--RetailPulse - frontend/purchases.html-->
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+        <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="js/tailwind-config.js"></script>
+        <title>Purchases · RetailPulse</title>
+    </head>
+    <body data-page="purchases" class="bg-background font-body-md text-body-md text-on-surface antialiased">
+        <div id="app" class="pl-64">
+            <main class="pt-16 px-space-lg pb-space-xl min-h-screen">
+                <div class="flex flex-col gap-space-lg pt-space-lg">
+                    <div class="flex items-end justify-between flex-wrap gap-space-md">
+                        <div>
+                            <h1 class="font-headline-lg text-headline-lg font-bold">Purchases</h1>
+                            <p class="text-on-surface-variant">Create and track purchase orders sent to suppliers.</p>
+                        </div>
+                        <button id="new-po" class="flex items-center gap-2 bg-primary-container text-on-primary px-space-lg py-2.5 rounded-xl font-title-sm text-title-sm shadow-sm active:scale-95 transition"><span class="material-symbols-outlined text-[20px]">add</span>New purchase order</button>
+                    </div>
+                    <div id="kpis" class="grid grid-cols-1 md:grid-cols-3 gap-space-md"></div>
+                    <div class="bg-surface-container-lowest rounded-xl shadow-sm">
+                        <div class="p-space-md flex flex-wrap items-center justify-between gap-space-md">
+                            <div id="tabs" class="flex gap-1 bg-surface-container-low p-1 rounded-xl"></div>
+                            <input id="q" type="search" placeholder="Search PO number or supplier" aria-label="Search purchase orders" class="h-10 w-72 px-space-md bg-surface-container-low rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-container"/>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead>
+                                    <tr class="bg-surface-container-low text-on-surface-variant font-label-sm text-label-sm uppercase">
+                                        <th class="px-space-md py-3">PO #</th> 
+                                        <th class="px-space-md">Supplier</th>
+                                        <th class="px-space-md">Order date</th>
+                                        <th class="px-space-md text-right">Items</th>
+                                        <th class="px-space-md text-right">Total</th>
+                                        <th class="px-space-md">Status</th>
+                                        <th class="px-space-md text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rows" class="divide-y divide-surface-container-low"></tbody>
+                            </table>
+                            <p id="empty" class="hidden p-space-xl text-center text-on-surface-variant">No purchase orders match your filters.</p>
+                        </div>
+                    </div>
+                </div>
+                <dialog id="po-dlg" class="rounded-xl p-0 w-full max-w-md backdrop:bg-black/40">
+                    <form id="po-form" method="dialog" class="p-space-lg flex flex-col gap-space-md">
+                        <h2 class="font-headline-sm text-headline-sm font-bold">New purchase order</h2>
+                        <select id="po-sku" name="sku" required aria-label="Product" class="h-10 px-space-md bg-surface-container-low rounded-lg"></select>
+                        <input name="items" type="number" min="1" step="1" required placeholder="Quantity" aria-label="Quantity" class="h-10 px-space-md bg-surface-container-low rounded-lg"/>
+                        <input name="supplier" placeholder="Supplier (optional, defaults to the product's supplier)" aria-label="Supplier" class="h-10 px-space-md bg-surface-container-low rounded-lg"/>
+                        <div class="flex justify-end gap-space-sm">
+                            <button value="cancel" formnovalidate class="h-10 px-space-lg rounded-xl bg-surface-container-low font-title-sm">Cancel</button>
+                            <button class="h-10 px-space-lg rounded-xl bg-primary-container text-on-primary font-title-sm">Create draft</button>
+                        </div>
+                    </form>
+                </dialog>
+            </main>
+        </div>
+        <script src="js/layout.js"></script>
+        <script src="js/data.js"></script>
+
+        <script type="module">
+            await DB.boot(["products", "purchases"]);
+
+            const STATUS = {
+                Draft: "bg-surface-container text-on-surface-variant",
+                Ordered: "bg-primary-fixed text-on-primary-fixed-variant",
+                Received: "bg-secondary-container/40 text-on-secondary-container",
+                Cancelled: "bg-error-container text-on-error-container"
+            };
+            const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+            const el = id => document.getElementById(id);
+            let orders = DB.purchases;
+            let tab = "All", term = "";
+            if (!RP.isAdmin) el("new-po").remove();
+
+            const BTN = "px-3 py-1.5 rounded-lg bg-surface-container font-label-sm text-label-sm font-bold hover:bg-surface-container-high";
+            const ACTIONS = { Draft: [["Ordered", "Place order"], ["Cancelled", "Cancel"]], Ordered: [["Cancelled", "Cancel"]] };
+            const actions = o => !RP.isAdmin ? "" : (o.status === "Ordered" ? `<button data-receive="${esc(o.id)}" class="${BTN} text-primary">Mark received</button> ` : "")
+                + (ACTIONS[o.status] ?? []).map(([s, l]) => `<button data-status="${s}" data-po="${esc(o.id)}" class="${BTN}">${l}</button>`).join(" ");
+
+            function render() {
+                const list = orders.filter(o => (tab === "All" || o.status === tab) &&
+                    (o.id + o.supplier).toLowerCase().includes(term));
+
+                el("rows").innerHTML = list.map(o => `<tr class="hover:bg-surface-container-low/60">
+                    <td class="px-space-md py-3 font-title-sm text-primary">#${esc(o.id)}</td>
+                    <td class="px-space-md">${esc(o.supplier)}</td>
+                    <td class="px-space-md text-on-surface-variant">${esc(o.date)}</td>
+                    <td class="px-space-md text-right tabular-nums">${o.items}</td>
+                    <td class="px-space-md text-right font-bold tabular-nums">${RP.fmt(o.total)}</td>
+                    <td class="px-space-md"><span class="px-2.5 py-1 rounded-full font-label-sm text-label-sm ${STATUS[o.status] ?? ""}">${esc(o.status)}</span></td>
+                    <td class="px-space-md text-right whitespace-nowrap">${actions(o)}</td></tr>`).join("");
+                el("empty").classList.toggle("hidden", list.length > 0);
+
+                el("tabs").innerHTML = ["All", ...Object.keys(STATUS)].map(s => `<button data-tab="${s}"
+                    class="px-space-md py-1.5 rounded-lg font-title-sm text-title-sm ${s === tab ? "bg-surface-container-lowest text-primary shadow-sm" : "text-on-surface-variant"}">${s}</button>`).join("");
+
+                const open = orders.filter(o => o.status === "Ordered");
+                el("kpis").innerHTML = [
+                    ["Open orders", open.length, "pending_actions"],
+                    ["Open value", RP.fmt(open.reduce((s, o) => s + o.total, 0)), "payments"],
+                    ["Drafts to review", orders.filter(o => o.status === "Draft").length, "edit_note"]
+                ].map(([l, v, i]) => `<div class="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex items-center justify-between">
+                    <div><span class="font-label-md text-on-surface-variant">${l}</span><p class="font-headline-lg text-headline-lg font-bold">${v}</p></div>
+                    <span class="material-symbols-outlined text-primary-container bg-surface-container-high rounded-xl p-2">${i}</span></div>`).join("");
+            }
+
+            document.addEventListener("click", async e => {
+                const t = e.target.closest("[data-tab]"),
+                    r = e.target.closest("[data-receive]"),
+                    s = e.target.closest("[data-status]");
+
+                if (t) { tab = t.dataset.tab; render(); }
+
+                if (r) {
+                    try {
+                        await DB.receivePO(r.dataset.receive);
+                        orders = DB.purchases;
+                        render();
+                        RP.toast("Order marked as received");
+                    } catch (err) { RP.toast(err.message); }
+                }
+
+                if (s) {
+                    if (s.dataset.status === "Cancelled" && !confirm("Cancel this order?")) return;
+                    try {
+                        await DB.setPOStatus(s.dataset.po, s.dataset.status);
+                        orders = DB.purchases;
+                        render();
+                        RP.toast(s.dataset.status === "Ordered" ? "Order placed" : "Order cancelled");
+                    } catch (err) { RP.toast(err.message); }
+                }
+            });
+
+            el("q").addEventListener("input", e => { term = e.target.value.toLowerCase(); render(); });
+
+            const dlg = el("po-dlg"), poForm = el("po-form");
+
+            function openPO(sku) {
+                el("po-sku").innerHTML = DB.products.map(p => `<option value="${esc(p.sku)}">${esc(p.name)} (${esc(p.sku)})</option>`).join("");
+                if (sku) el("po-sku").value = sku;
+                dlg.showModal();
+            }
+            el("new-po")?.addEventListener("click", () => openPO());
+            const preSku = new URLSearchParams(location.search).get("sku");
+            if (RP.isAdmin && preSku) openPO(preSku);
+
+            poForm.addEventListener("submit", async e => {
+                if (e.submitter.value === "cancel") return;
+                e.preventDefault();
+                const f = Object.fromEntries(new FormData(poForm));
+                try {
+                    await DB.createPO({ sku: f.sku, items: +f.items, supplier: f.supplier.trim() || undefined });
+                    orders = DB.purchases; render();
+                    poForm.reset(); dlg.close();
+                    RP.toast("Draft purchase order created");
+                } catch (err) { RP.toast(err.message); }
+            });
+
+            render();
+        </script>
+    </body>
+</html>

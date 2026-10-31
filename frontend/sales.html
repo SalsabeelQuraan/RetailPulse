@@ -1,0 +1,134 @@
+<!--RetailPulse - frontend/sales.html-->
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+        <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="js/tailwind-config.js"></script>
+        <title>Sales · RetailPulse</title>
+    </head>
+    <body data-page="sales" class="bg-background font-body-md text-body-md text-on-surface antialiased">
+        <div id="app" class="pl-64">
+            <main class="pt-16 px-space-lg pb-space-xl min-h-screen">
+                <div id="view" class="flex flex-col gap-space-lg pt-space-lg"></div>
+            </main>
+        </div>
+        <script src="js/layout.js"></script>
+        <script src="js/data.js"></script>
+        <script src="js/ui.js"></script>
+        <script type="module">
+            await DB.boot();
+            const { $, header, badge, input, th } = UI;
+            const esc = RP.esc;
+            const cart = new Map(), state = { view: "pos", q: "", payment: "Card", rate: 0, coupon: null, busy: false };
+
+            $("#view").innerHTML = `
+            ${header("Sales", "Register #01 · ring up sales and review today's orders.", `<div id="views" class="flex gap-1 bg-surface-container-low p-1 rounded-xl"></div>`)}
+            <div id="pos" class="grid grid-cols-1 xl:grid-cols-12 gap-space-lg items-start">
+                <div class="xl:col-span-7 flex flex-col gap-space-md"><input id="q" type="search" autofocus placeholder="Scan barcode or search by name or SKU" aria-label="Search products" class="${input} h-12 bg-surface-container-lowest shadow-sm"/>
+                <div id="grid" class="grid grid-cols-2 md:grid-cols-3 gap-space-md"></div></div>
+                <aside class="xl:col-span-5 bg-surface-container-lowest rounded-xl shadow-md p-space-lg flex flex-col gap-space-md xl:sticky xl:top-20">
+                <div class="flex justify-between items-center"><h2 class="font-title-md text-title-md font-bold">Current order</h2><button id="clear" class="text-error font-label-md font-semibold">Clear cart</button></div>
+                <ul id="lines" class="flex flex-col gap-space-sm max-h-80 overflow-y-auto"></ul>
+                <input id="customer" placeholder="Customer name (optional)" aria-label="Customer name" class="${input} w-full"/>
+                <div class="flex gap-space-xs">
+                <input id="coupon" placeholder="Promo code" aria-label="Promo code" class="${input} flex-1 min-w-0 uppercase"/>
+                <button id="apply" class="h-10 px-space-md rounded-xl bg-surface-container font-title-sm">Apply</button></div>
+                <dl id="totals" class="bg-surface-container-low rounded-xl p-space-md flex flex-col gap-2"></dl>
+                <div id="pay" class="grid grid-cols-3 gap-space-xs"></div>
+                <button id="done" class="h-14 rounded-xl bg-primary-container text-on-primary font-headline-sm font-bold shadow-md active:scale-[.98] disabled:opacity-40"></button></aside></div>
+            <div id="history" class="hidden bg-surface-container-lowest rounded-xl shadow-sm overflow-x-auto"><table class="w-full text-left"><thead><tr class="bg-surface-container-low text-on-surface-variant">
+                ${["Order", "Time", "Customer", "Payment", "Status", "Items", "Total"].map(h => `<th class="${th}">${h}</th>`).join("")}</tr></thead><tbody id="orders" class="divide-y divide-surface-container-low"></tbody></table></div>`;
+
+            const r2 = n => Math.round(n * 100) / 100;
+            const totals = () => {
+                const sub = r2([...cart].reduce((s, [sku, q]) => s + (DB.find(sku)?.price ?? 0) * q, 0));
+                const disc = r2(sub * state.rate), tax = r2((sub - disc) * DB.TAX);
+                return { sub, disc, tax, total: r2(sub - disc + tax) };
+            };
+
+            function add(sku, d) {
+                const p = DB.find(sku);
+                if (!p) return;
+                const next = (cart.get(sku) || 0) + d;
+                if (next > p.stock) return RP.toast(`Only ${p.stock} in stock`);
+                next <= 0 ? cart.delete(sku) : cart.set(sku, next);
+                render();
+            }
+
+            function render() {
+                const t = state.q.toLowerCase();
+                $("#grid").innerHTML = DB.products.filter(p => (p.name + p.sku).toLowerCase().includes(t)).map(p => `<button data-add="${esc(p.sku)}" ${p.stock ? "" : "disabled"}
+                    class="text-left bg-surface-container-lowest p-space-md rounded-xl shadow-sm hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed transition">
+                    <p class="font-body-sm text-on-surface-variant">${esc(p.sku)}</p><p class="font-title-sm text-title-sm line-clamp-1">${esc(p.name)}</p>
+                    <div class="flex justify-between items-center mt-space-sm"><span class="font-headline-sm text-headline-sm font-bold">${RP.fmt(p.price)}</span>${badge(DB.status(p))}</div></button>`).join("");
+
+                $("#lines").innerHTML = [...cart].map(([sku, q]) => {
+                    const p = DB.find(sku);
+                    if (!p) return "";
+                    return `<li class="bg-surface-container-low p-space-sm rounded-xl flex items-center justify-between gap-space-sm">
+                    <div class="min-w-0"><p class="font-title-sm text-title-sm truncate">${esc(p.name)}</p><p class="font-body-sm text-on-surface-variant">${RP.fmt(p.price)} each</p></div>
+                    <div class="flex items-center gap-1"><button data-dec="${esc(sku)}" aria-label="Decrease" class="w-7 h-7 rounded-md bg-surface-container-lowest">−</button><span class="w-6 text-center font-bold tabular-nums">${q}</span>
+                    <button data-add="${esc(sku)}" aria-label="Increase" class="w-7 h-7 rounded-md bg-surface-container-lowest">+</button></div><span class="font-bold tabular-nums w-20 text-right">${RP.fmt(p.price * q)}</span></li>`;
+                }).join("") || `<li class="text-on-surface-variant text-center py-space-lg">Cart is empty. Tap a product to add it.</li>`;
+
+                const T = totals(), row = (l, v, c = "") => `<div class="flex justify-between ${c}"><dt>${l}</dt><dd class="tabular-nums font-semibold">${v}</dd></div>`;
+                $("#totals").innerHTML = row("Subtotal", RP.fmt(T.sub)) + (T.disc ? row("Discount", "−" + RP.fmt(T.disc), "text-secondary") : "") + row(`Tax (${+(DB.TAX * 100).toFixed(2)}%)`, RP.fmt(T.tax)) +
+                    `<div class="flex justify-between pt-2 font-title-md"><dt>Total</dt><dd class="tabular-nums text-primary font-bold text-headline-sm">${RP.fmt(T.total)}</dd></div>`;
+
+                $("#pay").innerHTML = ["Cash", "Card", "QR Pay"].map(m => `<button data-pay="${m}" class="p-space-sm rounded-xl font-title-sm ${m === state.payment ? "bg-primary-container text-on-primary" : "bg-surface-container-low"}">${m}</button>`).join("");
+                $("#done").disabled = !cart.size || state.busy;
+                $("#done").textContent = state.busy ? "Processing…" : `Complete sale · ${RP.fmt(T.total)}`;
+
+                $("#orders").innerHTML = DB.sales.map(s => `<tr><td class="px-space-md py-3 font-title-sm text-primary">#${esc(s.id)}</td><td class="px-space-md text-on-surface-variant">${esc(s.at)}</td><td class="px-space-md">${esc(s.customer)}</td>
+                    <td class="px-space-md">${esc(s.payment)}</td><td class="px-space-md">${badge(s.status)}</td><td class="px-space-md tabular-nums">${s.items}</td><td class="px-space-md font-bold tabular-nums ${s.total < 0 ? "text-error" : ""}">${RP.fmt(s.total)}</td></tr>`).join("");
+
+                $("#views").innerHTML = [["pos", "New sale"], ["history", `Order history (${DB.sales.length})`]].map(([v, l]) => `<button data-view="${v}" class="px-space-md py-1.5 rounded-lg font-title-sm ${v === state.view ? "bg-surface-container-lowest text-primary shadow-sm" : "text-on-surface-variant"}">${l}</button>`).join("");
+                $("#pos").classList.toggle("hidden", state.view !== "pos");
+                $("#history").classList.toggle("hidden", state.view !== "history");
+            }
+
+            document.addEventListener("click", e => {
+                const a = e.target.closest("[data-add]"), d = e.target.closest("[data-dec]"), p = e.target.closest("[data-pay]"), v = e.target.closest("[data-view]");
+                if (a) add(a.dataset.add, 1);
+                if (d) add(d.dataset.dec, -1);
+                if (p) { state.payment = p.dataset.pay; render(); }
+                if (v) { state.view = v.dataset.view; render(); }
+            });
+
+            $("#q").addEventListener("input", e => { state.q = e.target.value; render(); });
+            $("#clear").addEventListener("click", () => { cart.clear(); state.rate = 0; state.coupon = null; $("#coupon").value = ""; render(); });
+
+            $("#apply").addEventListener("click", async () => {
+                const code = $("#coupon").value.trim().toUpperCase();
+                try {
+                    const r = await DB.checkCoupon(code);
+                    state.rate = r.rate; state.coupon = r.code;
+                    RP.toast(`Promo applied: ${+(r.rate * 100).toFixed(2)}% off`);
+                } catch {
+                    state.rate = 0; state.coupon = null;
+                    RP.toast("Invalid promo code");
+                }
+                render();
+            });
+
+            $("#done").addEventListener("click", async () => {
+                if (state.busy || !cart.size) return;
+                state.busy = true; render();
+                try {
+                    const o = await DB.recordSale([...cart], { payment: state.payment, coupon: state.coupon, customer: $("#customer").value });
+                    cart.clear(); state.rate = 0; state.coupon = null; $("#coupon").value = ""; $("#customer").value = "";
+                    RP.toast(`Sale ${o.id} completed · ${RP.fmt(o.total)}`);
+                } catch (err) {
+                    RP.toast(err.message);
+                } finally {
+                    state.busy = false; render();
+                }
+            });
+            render();
+        </script>
+    </body>
+</html>

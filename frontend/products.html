@@ -1,0 +1,118 @@
+<!--RetailPulse - frontend/products.html-->
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+        <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="js/tailwind-config.js"></script>
+        <title>Products · RetailPulse</title>
+    </head>
+    <body data-page="products" class="bg-background font-body-md text-body-md text-on-surface antialiased">
+        <div id="app" class="pl-64">
+            <main class="pt-16 px-space-lg pb-space-xl min-h-screen">
+                <div id="view" class="flex flex-col gap-space-lg pt-space-lg"></div>
+            </main>
+        </div>
+        <script src="js/layout.js"></script>
+        <script src="js/data.js"></script>
+        <script src="js/ui.js"></script>
+        <script>
+            (async () => {
+                await DB.boot(["products"]);
+
+                    const { $, badge, header, input, th } = UI;
+                    const esc = RP.esc;                    
+                    const state = { q: "", cat: "All", status: "All" };
+                    const initQ = new URLSearchParams(location.search).get("q");
+                    $("#view").innerHTML = `
+                    ${header("Products", "Manage the product catalog, prices, margins, and alert levels.",RP.isAdmin ? `<button id="add" class="${UI.btn}"><span class="material-symbols-outlined text-[20px]">add</span>Add product</button>` : "")}
+                    <div class="bg-surface-container-lowest rounded-xl shadow-sm p-space-md flex flex-wrap gap-space-sm">
+                        <input id="q" type="search" placeholder="Search by name, SKU, supplier" aria-label="Search products" class="${input} flex-1 min-w-[240px]"/>
+                        <select id="cat" aria-label="Category" class="${input}"><option>All</option>${[...new Set(DB.products.map(p => p.category))].map(c => `<option>${esc(c)}</option>`).join("")}</select>
+                        <select id="status" aria-label="Stock status" class="${input}"><option>All</option><option>Needs Reorder</option><option>In Stock</option><option>Low Stock</option><option>Out of Stock</option></select></div>
+                    <div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-x-auto"><table class="w-full text-left">
+                        <thead><tr class="bg-surface-container-low text-on-surface-variant"><th class="${th}">SKU</th><th class="${th}">Product</th><th class="${th}">Category</th>
+                        <th class="${th} text-right">Cost</th><th class="${th} text-right">Price</th><th class="${th} text-right">Margin</th><th class="${th}">Stock</th><th class="${th}">Status</th>${RP.isAdmin ? `<th class="${th} text-right">Actions</th>` : ""}</tr></thead>
+                        <tbody id="rows" class="divide-y divide-surface-container-low"></tbody></table><p id="empty" class="hidden p-space-xl text-center text-on-surface-variant">No products match your filters.</p></div>
+                    <dialog id="dlg" class="rounded-xl p-0 w-full max-w-lg backdrop:bg-black/40"><form id="form" method="dialog" class="p-space-lg flex flex-col gap-space-md">
+                        <h2 class="font-headline-sm text-headline-sm font-bold">Add product</h2>
+                        <input name="name" required placeholder="Product name" aria-label="Product name" class="${input}"/>
+                        <div class="grid grid-cols-2 gap-space-md"><input name="sku" required placeholder="SKU (e.g. SK-EL-992)" aria-label="SKU" class="${input}"/>
+                        <input name="category" required placeholder="Category" aria-label="Category" list="cats" class="${input}"/>
+                        <datalist id="cats">${[...new Set(DB.products.map(p => p.category))].map(c => `<option>${esc(c)}</option>`).join("")}</datalist></div>
+                        <input name="supplier" placeholder="Supplier (optional)" aria-label="Supplier" class="${input}"/>
+                        <div class="grid grid-cols-2 gap-space-md"><input name="cost" type="number" step="0.01" min="0" required placeholder="Cost price" aria-label="Cost price" class="${input}"/>
+                        <input name="price" type="number" step="0.01" min="0" required placeholder="Selling price" aria-label="Selling price" class="${input}"/></div>
+                        <div class="grid grid-cols-2 gap-space-md"><input name="stock" type="number" min="0" value="0" aria-label="Initial quantity" class="${input}"/>
+                        <input name="min" type="number" min="0" value="10" aria-label="Minimum stock level" class="${input}"/></div>
+                        <p id="preview" class="bg-surface-container-low rounded-lg p-space-sm text-on-surface-variant">Enter cost and price to preview your margin.</p>
+                        <div class="flex justify-end gap-space-sm"><button value="cancel" formnovalidate class="h-10 px-space-lg rounded-xl bg-surface-container-low font-title-sm">Cancel</button>
+                        <button id="save" class="h-10 px-space-lg rounded-xl bg-primary-container text-on-primary font-title-sm">Save product</button></div></form></dialog>`;
+                    if (initQ) { state.q = initQ; $("#q").value = initQ; }
+                    const initStatus = new URLSearchParams(location.search).get("status");
+                    if (initStatus) { state.status = initStatus; $("#status").value = initStatus; }
+
+                    function render() {
+                    $("#cats").innerHTML = [...new Set(DB.products.map(p => p.category))].map(c => `<option>${esc(c)}</option>`).join("");
+                    const t = state.q.toLowerCase();
+                    const list = DB.products.filter(p => (state.cat === "All" || p.category === state.cat) && (state.status === "All" || (state.status === "Needs Reorder" ? DB.status(p) !== "In Stock" : DB.status(p) === state.status))
+                        && (p.name + p.sku + p.supplier).toLowerCase().includes(t));
+                    $("#rows").innerHTML = list.map(p => `<tr class="hover:bg-surface-container-low/60"><td class="px-space-md py-3 font-numeric-table text-on-surface-variant">${esc(p.sku)}</td>
+                        <td class="px-space-md"><p class="font-title-sm text-title-sm">${esc(p.name)}</p><p class="font-body-sm text-on-surface-variant">${esc(p.supplier)}</p></td><td class="px-space-md">${esc(p.category)}</td>
+                        <td class="px-space-md text-right tabular-nums text-on-surface-variant">${RP.fmt(p.cost)}</td><td class="px-space-md text-right tabular-nums font-bold">${RP.fmt(p.price)}</td>
+                        <td class="px-space-md text-right tabular-nums">${DB.margin(p).toFixed(1)}%</td>
+                        <td class="px-space-md min-w-[130px]"><span class="font-bold tabular-nums">${p.stock}</span> <span class="text-on-surface-variant">/ ${p.max}</span>
+                        <div class="h-1.5 rounded-full bg-surface-container mt-1"><div class="h-full rounded-full ${p.stock <= p.min ? "bg-error" : "bg-secondary"}" style="width:${Math.min(100, p.stock / p.max * 100)}%"></div></div></td>
+                        <td class="px-space-md">${badge(DB.status(p))}</td>
+                    ${RP.isAdmin ? `<td class="px-space-md text-right"><button data-edit="${esc(p.sku)}" aria-label="Edit ${esc(p.name)}" class="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container-low"><span class="material-symbols-outlined text-[18px]">edit</span></button>
+                        <button data-del="${esc(p.sku)}" aria-label="Delete ${esc(p.name)}" class="p-1.5 rounded-lg text-on-surface-variant hover:text-error hover:bg-error-container/40"><span class="material-symbols-outlined text-[18px]">delete</span></button></td>` : ""}</tr>`).join("");
+                    $("#empty").classList.toggle("hidden", list.length > 0);                    }
+                    const bind = (id, key) => $(id).addEventListener("input", e => { state[key] = e.target.value; render(); });
+                    bind("#q", "q"); bind("#cat", "cat"); bind("#status", "status");
+                    let editing = null;
+                    function openDialog(p) {
+                        editing = p?.sku ?? null;
+                        const f = $("#form");
+                        f.reset();
+                        $("#dlg h2").textContent = p ? "Edit product" : "Add product";
+                        f.elements.sku.readOnly = !!p;
+                        f.elements.stock.disabled = !!p;
+                        if (p) for (const k of ["name", "sku", "category", "supplier", "cost", "price", "min"])
+                            f.elements[k].value = (k === "supplier" && p[k] === "—") ? "" : p[k];
+                        $("#dlg").showModal();
+                    }
+                    $("#add")?.addEventListener("click", () => openDialog());
+                    $("#form").addEventListener("input", () => {
+                    const f = new FormData($("#form")), c = +f.get("cost"), p = +f.get("price");
+                    if (c && p) $("#preview").textContent = `Unit profit ${RP.fmt(p - c)} · margin ${((p - c) / p * 100).toFixed(1)}%`;
+                    });
+                    $("#form").addEventListener("submit", async e => {
+                    if (e.submitter.value === "cancel") return;
+                    e.preventDefault();
+                    const f = Object.fromEntries(new FormData(e.target));
+                    try {
+                        const payload = { ...f, cost: +f.cost, price: +f.price, min: +f.min };
+                        if (editing) await DB.updateProduct(editing, payload);
+                        else await DB.addProduct({ ...payload, stock: +f.stock });
+                        e.target.reset(); $("#dlg").close(); render(); RP.toast(editing ? "Product updated" : "Product saved");
+                    } catch (err) { RP.toast(err.message); }
+                    });
+
+                    document.addEventListener("click", async e => {
+                    const ed = e.target.closest("[data-edit]");
+                    if (ed && RP.isAdmin) openDialog(DB.find(ed.dataset.edit));
+                    const d = e.target.closest("[data-del]");
+                    if (d && RP.isAdmin && confirm("Delete this product?")) {
+                        try { await DB.removeProduct(d.dataset.del); render(); RP.toast("Product deleted"); }
+                        catch (err) { RP.toast(err.message); }
+                    }
+                    });
+                    render();
+                })
+            ();
+        </script>
+    </body>
+</html>

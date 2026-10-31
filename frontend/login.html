@@ -1,0 +1,69 @@
+<!--RetailPulse - frontend/login.html-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/tailwind-config.js"></script>
+    <title>Login · RetailPulse</title>
+</head>
+<body class="bg-background font-body-md text-body-md text-on-surface antialiased min-h-screen flex items-center justify-center p-space-md">
+    <form id="form" class="bg-surface-container-lowest p-space-lg rounded-xl shadow-md w-full max-w-sm flex flex-col gap-space-md">
+        <div class="flex items-center gap-space-sm">
+            <span class="w-10 h-10 rounded-lg bg-primary-container text-on-primary flex items-center justify-center">
+                <span class="material-symbols-outlined">monitoring</span>
+            </span>
+            <h1 class="font-headline-sm text-headline-sm font-bold">RetailPulse</h1>
+        </div>
+        <p class="text-on-surface-variant">Sign in to manage your store.</p>
+
+        <label class="flex flex-col gap-1.5 font-label-md font-semibold">Username
+            <input name="username" required autocomplete="username" autofocus
+                class="h-10 px-space-md bg-surface-container-low rounded-lg font-normal focus:outline-none focus:ring-2 focus:ring-primary-container"/>
+        </label>
+        <label class="flex flex-col gap-1.5 font-label-md font-semibold">Password
+            <input name="password" type="password" required autocomplete="current-password"
+                class="h-10 px-space-md bg-surface-container-low rounded-lg font-normal focus:outline-none focus:ring-2 focus:ring-primary-container"/>
+        </label>
+
+        <p id="err" role="alert" class="hidden text-error font-label-md"></p>
+
+        <button id="btn" class="h-11 rounded-xl bg-primary-container text-on-primary font-title-sm shadow-sm active:scale-95 disabled:opacity-50">Sign in</button>
+    </form>
+
+    <script>
+        const API = "http://localhost:3000/api/auth/login";
+        const form = document.getElementById("form");
+        const err = document.getElementById("err");
+        const btn = document.getElementById("btn");
+
+        if (localStorage.getItem("retailpulse.token")) location.replace("dashboard.html");
+
+        form.addEventListener("submit", async e => {
+            e.preventDefault();
+            err.classList.add("hidden");
+            btn.disabled = true; btn.textContent = "Signing in…";
+            try {
+                const res = await fetch(API, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(Object.fromEntries(new FormData(form)))
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || "Login failed");
+                localStorage.setItem("retailpulse.token", data.token);
+                localStorage.setItem("retailpulse.user", JSON.stringify(data.user));
+                location.href = "dashboard.html";
+            } catch (ex) {
+                err.textContent = ex instanceof TypeError ? "Cannot reach the server. Is it running?" : ex.message;
+                err.classList.remove("hidden");
+            } finally {
+                btn.disabled = false; btn.textContent = "Sign in";
+            }
+        });
+    </script>
+</body>
+</html>

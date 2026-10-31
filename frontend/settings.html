@@ -1,0 +1,116 @@
+<!--RetailPulse - frontend/settings.html-->
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+        <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="js/tailwind-config.js"></script>
+        <title>Settings · RetailPulse</title>
+    </head>
+    <body data-page="settings" class="bg-background font-body-md text-body-md text-on-surface antialiased">
+        <div id="app" class="pl-64">
+            <main class="pt-16 px-space-lg pb-space-xl min-h-screen">
+                <div class="flex flex-col gap-space-lg pt-space-lg max-w-3xl">
+                    <div>
+                        <h1 class="font-headline-lg text-headline-lg font-bold">Settings</h1>
+                        <p class="text-on-surface-variant">Manage your store details, tax rules, and alerts.</p>
+                    </div>
+                    <form id="form" class="bg-surface-container-lowest rounded-xl shadow-sm p-space-lg flex flex-col gap-space-lg">
+                        <fieldset class="grid sm:grid-cols-2 gap-space-md">
+                            <legend class="font-title-md text-title-md font-bold mb-space-sm">Store profile</legend>
+                            <label class="flex flex-col gap-1.5 font-label-md font-semibold">Store name<input name="storeName" required class="h-10 px-space-md bg-surface-container-low rounded-lg font-normal focus:outline-none focus:ring-2 focus:ring-primary-container"/></label>
+                            <label class="flex flex-col gap-1.5 font-label-md font-semibold">Contact email<input name="email" type="email" required class="h-10 px-space-md bg-surface-container-low rounded-lg font-normal focus:outline-none focus:ring-2 focus:ring-primary-container"/></label>
+                        </fieldset>
+                        <fieldset class="grid sm:grid-cols-2 gap-space-md">
+                            <legend class="font-title-md text-title-md font-bold mb-space-sm">Tax and currency</legend>
+                            <label class="flex flex-col gap-1.5 font-label-md font-semibold">Currency
+                                <select name="currency" class="h-10 px-space-md bg-surface-container-low rounded-lg font-normal">
+                                    <option>USD</option>
+                                    <option>JOD</option>
+                                    <option>EUR</option>
+                                </select>
+                            </label>
+                            <label class="flex flex-col gap-1.5 font-label-md font-semibold">Sales tax (%)<input name="tax" type="number" min="0" max="100" step="0.1" class="h-10 px-space-md bg-surface-container-low rounded-lg font-normal focus:outline-none focus:ring-2 focus:ring-primary-container"/></label>
+                        </fieldset>
+                        <fieldset class="flex flex-col gap-space-md">
+                            <legend class="font-title-md text-title-md font-bold mb-space-sm">Alerts</legend>
+                            <label class="flex items-center gap-space-sm text-on-surface-variant"><input name="lowStock" type="checkbox"/>Show low-stock alert badge on the bell</label>
+                            <label class="flex items-center gap-space-sm text-on-surface-variant"><input name="daily" type="checkbox" disabled class="w-4 h-4 accent-primary-container"/>Send a daily sales summary (coming soon)</label>
+                        </fieldset>
+                        <div class="flex justify-end gap-space-sm">
+                            <button type="reset" class="h-10 px-space-lg rounded-xl bg-surface-container-low font-title-sm hover:bg-surface-container">Reset</button>
+                            <button type="submit" class="h-10 px-space-lg rounded-xl bg-primary-container text-on-primary font-title-sm shadow-sm active:scale-95">Save changes</button>
+                        </div>
+                    </form>
+                </div>
+            </main>
+        </div>
+        <script src="js/layout.js"></script>
+        <script>
+            const KEY = "retailpulse.settings", API = "http://localhost:3000/api/settings";
+            const form = document.getElementById("form");
+            const DEFAULTS = { storeName: "RetailPulse Store", email: "admin@retailpulse.app", currency: "USD", tax: 8, lowStock: true, daily: false };
+
+            const MAP = { storeName: "store_name", email: "email", currency: "currency", tax: "tax_percent", lowStock: "low_stock_alerts", daily: "daily_summary" };
+
+            if (!RP.isAdmin) {
+                [...form.elements].forEach(x => x.disabled = true);
+                form.querySelector('[type="submit"]').classList.add("hidden");
+            }
+
+            const loadLocal = () => { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY)) }; } catch { return DEFAULTS; } };
+
+            function fill(s) {
+                for (const [k, v] of Object.entries(s)) {
+                    const f = form.elements[k];
+                    if (!f) continue;
+                    f.type === "checkbox" ? f.checked = v : f.value = v;
+                }
+            }
+
+            function fromServer(srv) {
+                const s = {};
+                for (const [field, key] of Object.entries(MAP)) {
+                    if (srv[key] == null) continue;
+                    s[field] = form.elements[field].type === "checkbox" ? srv[key] === "true" : srv[key];
+                }
+                return s;
+            }
+
+            (async () => {
+                fill(loadLocal());
+                try {
+                    const srv = await RP.authFetch(API).then(r => r.json());
+                    const s = { ...loadLocal(), ...fromServer(srv) };
+                    fill(s);
+                    localStorage.setItem(KEY, JSON.stringify(s));
+                } catch { RP.toast("Could not load settings from server"); }
+            })();
+
+            form.addEventListener("reset", e => { e.preventDefault(); fill(DEFAULTS); });
+
+            form.addEventListener("submit", async e => {
+                e.preventDefault();
+                const s = {}, body = {};
+                for (const [field, key] of Object.entries(MAP)) {
+                    const f = form.elements[field];
+                    s[field] = body[key] = f.type === "checkbox" ? f.checked : f.value;
+                }
+                try {
+                    const res = await RP.authFetch(API, {
+                        method: "PUT",
+                        body: JSON.stringify(body)
+                    });
+                    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Request failed");
+                    RP.setLowCount(+localStorage.getItem("retailpulse.low") || 0);
+                    RP.toast("Settings saved");
+                } catch (err) {
+                    RP.toast(err.message || "Could not save settings");
+                }
+            });
+        </script>
+    </body>
+</html>

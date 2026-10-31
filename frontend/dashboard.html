@@ -1,0 +1,84 @@
+<!--RetailPulse - frontend/dashboard.html-->
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+        <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="js/tailwind-config.js"></script>
+        <title>Dashboard · RetailPulse</title>
+    </head>
+    <body data-page="dashboard" class="bg-background font-body-md text-body-md text-on-surface antialiased">
+        <div id="app" class="pl-64">
+            <main class="pt-16 px-space-lg pb-space-xl min-h-screen">
+                <div id="view" class="flex flex-col gap-space-lg pt-space-lg"></div>
+            </main>
+        </div>
+        <script src="js/layout.js"></script>
+        <script src="js/data.js"></script>
+        <script src="js/ui.js"></script>
+        <script type="module">
+            await DB.boot(["products", "sales", "daily", "todayStats"]);
+
+            const { $, kpi, badge, header } = UI;
+            const esc = RP.esc;
+            const userName = (() => { try { return JSON.parse(localStorage.getItem("retailpulse.user"))?.username; } catch { return null; } })() || "Admin";
+            const { sales: todaySales, orders: todayOrders } = DB.todayStats;
+            const low = DB.products.filter(p => DB.status(p) !== "In Stock").sort((a, b) => a.stock - b.stock);
+
+            const stockValue = p => p.cost * p.stock;
+            const topProducts = [...DB.products].sort((a, b) => stockValue(b) - stockValue(a)).slice(0, 5);
+            const topMax = Math.max(topProducts[0] ? stockValue(topProducts[0]) : 0, 1);
+
+            function chart(points) {
+                if (points.length < 2) return `<p class="text-on-surface-variant py-space-xl text-center">No sales data yet.</p>`;
+                const max = Math.max(...points, 1), step = 640 / (points.length - 1);
+                const xy = points.map((v, i) => [i * step, 210 - (v / max) * 190]);
+                const line = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+                return `<svg viewBox="0 0 640 220" class="w-full h-64" role="img" aria-label="Daily sales, last 14 days">
+                    <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#4f46e5" stop-opacity=".22"/><stop offset="1" stop-color="#4f46e5" stop-opacity="0"/></linearGradient></defs>
+                    <path d="${line} L640 215 L0 215Z" fill="url(#g)"/><path d="${line}" fill="none" stroke="#4f46e5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    ${xy.map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="4" fill="#fff" stroke="#4f46e5" stroke-width="2"><title>${RP.fmt(points[i])}</title></circle>`).join("")}</svg>`;
+            }
+
+            $("#view").innerHTML = `
+            ${header(`Welcome back, ${esc(userName)}`,
+             "Store performance and real-time inventory movements.",
+              `<a href="sales.html" class="${UI.btn}"><span class="material-symbols-outlined text-[20px]">point_of_sale</span>New sale</a>`)}
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+                    ${kpi("Today's sales", RP.fmt(todaySales), "point_of_sale", "excl. tax")}
+                    ${kpi("Orders today", todayOrders, "receipt_long")}
+                    ${kpi("Products", DB.products.length, "inventory_2", "active SKUs")}
+                    ${kpi("Inventory value", RP.fmt(DB.valuation()), "warehouse", "at cost")}</div>
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg">
+                    <section class="lg:col-span-8 bg-surface-container-lowest p-space-lg rounded-xl shadow-sm">
+                        <h2 class="font-title-md text-title-md font-bold mb-space-md">Sales, last 14 days (excl. tax)</h2>${chart(DB.daily)}</section>
+                    <section class="lg:col-span-4 bg-surface-container-lowest p-space-lg rounded-xl shadow-sm">
+                        <h2 class="font-title-md text-title-md font-bold mb-space-md">Top 5 products by stock value (at cost)</h2>
+                    <div class="flex flex-col gap-space-md">${topProducts.map(p => `<div>
+                        <div class="flex justify-between"><span class="font-title-sm text-title-sm truncate pr-2">${esc(p.name)}</span>
+                        <span class="tabular-nums font-bold">${RP.fmt(stockValue(p))}</span></div>
+                        <div class="h-2 rounded-full bg-surface-container-high mt-1">
+                            <div class="h-full rounded-full bg-primary-container" style="width:${stockValue(p) / topMax * 100}%">
+                                </div></div></div>`).join("") || "<p class='text-on-surface-variant'>No products yet.</p>"}</div></section></div>
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg">
+                    <section class="lg:col-span-7 bg-surface-container-lowest p-space-lg rounded-xl shadow-sm">
+                        <div class="flex justify-between mb-space-md">
+                            <h2 class="font-title-md text-title-md font-bold">Recent transactions</h2>
+                            <a href="sales.html" class="text-primary font-title-sm hover:underline">View all</a></div>
+                    <table class="w-full text-left">
+                        <tbody class="divide-y divide-surface-container-low">${DB.sales.slice(0, 5).map(s => `<tr>
+                            <td class="py-3 font-title-sm text-primary">#${esc(s.id)}</td><td>${esc(s.customer)}</td>
+                        <td class="text-right tabular-nums font-bold">${RP.fmt(s.total)}</td>
+                        <td class="text-right">${badge(s.status)}</td></tr>`).join("")}</tbody></table></section>
+                    <section class="lg:col-span-5 bg-surface-container-lowest p-space-lg rounded-xl shadow-sm">
+                        <h2 class="font-title-md text-title-md font-bold mb-space-md">Needs reordering (${low.length})</h2>
+                    <ul class="flex flex-col gap-space-sm">${low.map(p => `<li class="p-space-sm rounded-xl bg-surface-container-low flex justify-between items-center">
+                <div><p class="font-title-sm text-title-sm">${esc(p.name)}</p>
+                    <p class="font-body-sm text-on-surface-variant">${esc(p.sku)} · min ${p.min}</p></div>
+                    <div class="flex items-center gap-space-sm">${RP.isAdmin ? `<a href="purchases.html?sku=${encodeURIComponent(p.sku)}" class="text-primary font-title-sm hover:underline">Reorder</a>` : ""}${badge(DB.status(p))}</div></li>`).join("") || "<li class='text-on-surface-variant'>All products are well stocked.</li>"}</ul></section></div>`;
+        </script>
+    </body>
+</html>
